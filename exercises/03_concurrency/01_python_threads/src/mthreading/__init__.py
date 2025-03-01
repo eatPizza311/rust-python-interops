@@ -17,12 +17,22 @@ from queue import Queue
 # - https://docs.python.org/3/library/threading.html
 # - https://docs.python.org/3/library/queue.html
 def word_count(text: str, n_threads: int) -> int:
-    pass
+    queue = Queue()
+    threads = []
+    for chunk in split_into_chunks(text, n_threads):
+        t = Thread(target=word_count_task, args=(chunk, queue))
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
+    result = [queue.get() for _ in range(len(threads))]
+    return sum(result)
 
 
 # Compute the number of words in `text` and push the result into `result_queue`.
 # This function should be used as the target function for a `Process`.
-def word_count_task(text: str, result_queue: 'Queue[int]') -> None:
+def word_count_task(text: str, result_queue: "Queue[int]") -> None:
     n_words = len(text.split())
     result_queue.put(n_words)
 
