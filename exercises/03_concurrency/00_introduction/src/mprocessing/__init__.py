@@ -1,4 +1,5 @@
 from multiprocessing import Process, Queue
+from re import split
 
 
 # Return the number of words in `text` using `n_processes` processes.
@@ -15,12 +16,22 @@ from multiprocessing import Process, Queue
 # Relevant links:
 # - https://docs.python.org/3/library/multiprocessing.html
 def word_count(text: str, n_processes: int) -> int:
-    pass
+    result_queue = Queue()
+    process_handles = []
+    for chunk in split_into_chunks(text, n_processes):
+        p = Process(target=word_count_task, args=(chunk, result_queue))
+        p.start()
+        process_handles.append(p)
+
+    for p in process_handles:
+        p.join()
+    result = [result_queue.get() for _ in range(len(process_handles))]
+    return sum(result)
 
 
 # Compute the number of words in `text` and push the result into `result_queue`.
 # This function should be used as the target function for a `Process`.
-def word_count_task(text: str, result_queue: 'Queue[int]') -> None:
+def word_count_task(text: str, result_queue: "Queue[int]") -> None:
     n_words = len(text.split())
     result_queue.put(n_words)
 
