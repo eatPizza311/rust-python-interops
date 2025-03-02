@@ -1,7 +1,11 @@
+use std::collections::HashMap;
+
+use primes::factors_uniq;
 use pyo3::{
     prelude::*,
-    types::{PyDict, PyList},
+    types::{IntoPyDict, PyDict, PyList},
 };
+use rayon::prelude::*;
 
 #[pyfunction]
 // You're given a Python list of non-negative numbers.
@@ -24,7 +28,20 @@ fn compute_prime_factors<'python>(
     python: Python<'python>,
     numbers: Bound<'python, PyList>,
 ) -> PyResult<Bound<'python, PyDict>> {
-    todo!()
+    let n_numbers = numbers.len();
+    let number_ref = numbers.unbind();
+    let mut result_dict: HashMap<u64, Vec<u64>> = HashMap::new();
+    python.allow_threads(|| -> PyResult<()> {
+        for i in 0..n_numbers {
+            let n = Python::with_gil(|inner_python| {
+                number_ref.bind(inner_python).get_item(i)?.extract::<u64>()
+            })?;
+            let unique_prime = factors_uniq(n);
+            result_dict.insert(n, unique_prime);
+        }
+        Ok(())
+    });
+    result_dict.into_py_dict(python)
 }
 
 #[pymodule]
