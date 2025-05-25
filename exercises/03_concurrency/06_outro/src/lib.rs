@@ -50,7 +50,7 @@ pub fn site_map(start_from: String, site_map: Bound<'_, PySet>) {
     todo!()
 }
 
-fn crawl_with_mock(url: &Url, html: &str) -> HashSet<String> {
+fn extract_links_from_html(url: &Url, html: &str) -> HashSet<String> {
     let mut result = HashSet::new();
     let document = Html::parse_document(html.trim());
     let selector = Selector::parse(r#"a[href]"#).unwrap();
@@ -68,7 +68,7 @@ fn crawl_with_mock(url: &Url, html: &str) -> HashSet<String> {
     result
 }
 
-fn crawl_recursive(start: &Url, pages: &HashMap<String, &str>) -> HashSet<String> {
+fn crawl_site(start: &Url, pages: &HashMap<String, &str>) -> HashSet<String> {
     let mut visited = HashSet::new();
     let mut queue = vec![normalize_url(start)];
 
@@ -77,10 +77,9 @@ fn crawl_recursive(start: &Url, pages: &HashMap<String, &str>) -> HashSet<String
             continue;
         }
 
-        println!("{:?}", pages.get(&current_url));
         if let Some(&html) = pages.get(&current_url) {
             let current_url = Url::parse(&current_url).unwrap();
-            let links = crawl_with_mock(&current_url, html);
+            let links = extract_links_from_html(&current_url, html);
 
             for link in links {
                 if !visited.contains(&link) {
@@ -127,7 +126,7 @@ mod test {
 
         let base_url = Url::parse("http://example.com").unwrap();
 
-        let result = crawl_with_mock(&base_url, html);
+        let result = extract_links_from_html(&base_url, html);
 
         let expected: HashSet<String> =
             vec!["http://example.com/about", "http://example.com/contact"]
@@ -139,7 +138,7 @@ mod test {
     }
 
     #[test]
-    fn it_crawls_multiple_gages_recursively() {
+    fn it_crawls_multiple_pages_recursively() {
         let mut mock_pages = HashMap::new();
 
         mock_pages.insert( normalize_url(&Url::parse("http://a.com").unwrap()), r#"<a href="/page1">Page 1</a>"#);
@@ -150,7 +149,7 @@ mod test {
         mock_pages.insert(normalize_url(&Url::parse("http://a.com/page2").unwrap()), "");
 
         let start = Url::parse("http://a.com").unwrap();
-        let result = crawl_recursive(&start, &mock_pages);
+        let result = crawl_site(&start, &mock_pages);
 
         let expected: HashSet<String> =
             vec!["http://a.com/", "http://a.com/page1", "http://a.com/page2"]
