@@ -50,15 +50,15 @@ pub fn site_map(start_from: String, site_map: Bound<'_, PySet>) {
     todo!()
 }
 
-fn extract_links_from_html(url: &Url, html: &str) -> HashSet<String> {
+fn extract_links_from_html(base_url: &Url, html: &str) -> HashSet<String> {
     let mut result = HashSet::new();
     let document = Html::parse_document(html.trim());
     let selector = Selector::parse(r#"a[href]"#).unwrap();
 
     for element in document.select(&selector) {
         if let Some(href) = element.value().attr("href") {
-            if let Ok(joined) = url.join(href) {
-                if joined.domain() == url.domain() {
+            if let Ok(joined) = base_url.join(href) {
+                if joined.domain() == base_url.domain() {
                     let clean = normalize_url(&joined);
                     result.insert(clean);
                 }
@@ -68,7 +68,12 @@ fn extract_links_from_html(url: &Url, html: &str) -> HashSet<String> {
     result
 }
 
-fn crawl_site(start: &Url, pages: &HashMap<String, &str>) -> HashSet<String> {
+pub trait Fetcher {
+    fn fetch(&self, url: &str) -> Option<String>;
+}
+
+
+fn crawl_site<F: Fetcher>(start: &Url, fetcher: &F) -> HashSet<String> {
     let mut visited = HashSet::new();
     let mut queue = vec![normalize_url(start)];
 
@@ -77,9 +82,9 @@ fn crawl_site(start: &Url, pages: &HashMap<String, &str>) -> HashSet<String> {
             continue;
         }
 
-        if let Some(&html) = pages.get(&current_url) {
+        if let Some(html) = fetcher.fetch(&current_url) {
             let current_url = Url::parse(&current_url).unwrap();
-            let links = extract_links_from_html(&current_url, html);
+            let links = extract_links_from_html(&current_url, &html);
 
             for link in links {
                 if !visited.contains(&link) {
@@ -137,19 +142,34 @@ mod test {
         assert_eq!(result, expected);
     }
 
+    struct MockFetcher {
+        pages: HashMap<String, String>
+    }
+
+    impl Fetcher for MockFetcher {
+        fn fetch(&self, url: &str) -> Option<String> {
+            self.pages.get(url).cloned()
+        }
+        
+    }
+    
     #[test]
     fn it_crawls_multiple_pages_recursively() {
         let mut mock_pages = HashMap::new();
 
-        mock_pages.insert( normalize_url(&Url::parse("http://a.com").unwrap()), r#"<a href="/page1">Page 1</a>"#);
+        mock_pages.insert( normalize_url(&Url::parse("http://a.com").unwrap()), r#"<a href="/page1">Page 1</a>"#.to_owned());
         mock_pages.insert(
             normalize_url(&Url::parse("http://a.com/page1").unwrap()),
-            r#"<a href="/page2">Page 2</a>"#,
+            r#"<a href="/page2">Page 2</a>"#.to_owned(),
         );
-        mock_pages.insert(normalize_url(&Url::parse("http://a.com/page2").unwrap()), "");
+        mock_pages.insert(normalize_url(&Url::parse("http://a.com/page2").unwrap()), "".to_owned());
+
+        let mock_fetcher = MockFetcher {
+            pages: mock_pages
+        };
 
         let start = Url::parse("http://a.com").unwrap();
-        let result = crawl_site(&start, &mock_pages);
+        let result = crawl_site(&start, &mock_fetcher);
 
         let expected: HashSet<String> =
             vec!["http://a.com/", "http://a.com/page1", "http://a.com/page2"]
