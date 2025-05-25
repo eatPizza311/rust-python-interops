@@ -72,6 +72,13 @@ pub trait Fetcher {
     fn fetch(&self, url: &str) -> Option<String>;
 }
 
+pub struct HttpFetcher;
+
+impl Fetcher for HttpFetcher {
+    fn fetch(&self, url: &str) -> Option<String> {
+        ureq::get(url).call().ok()?.into_string().ok()
+    }
+}
 
 fn crawl_site<F: Fetcher>(start: &Url, fetcher: &F) -> HashSet<String> {
     let mut visited = HashSet::new();
@@ -143,30 +150,33 @@ mod test {
     }
 
     struct MockFetcher {
-        pages: HashMap<String, String>
+        pages: HashMap<String, String>,
     }
 
     impl Fetcher for MockFetcher {
         fn fetch(&self, url: &str) -> Option<String> {
             self.pages.get(url).cloned()
         }
-        
     }
-    
+
     #[test]
     fn it_crawls_multiple_pages_recursively() {
         let mut mock_pages = HashMap::new();
 
-        mock_pages.insert( normalize_url(&Url::parse("http://a.com").unwrap()), r#"<a href="/page1">Page 1</a>"#.to_owned());
+        mock_pages.insert(
+            normalize_url(&Url::parse("http://a.com").unwrap()),
+            r#"<a href="/page1">Page 1</a>"#.to_owned(),
+        );
         mock_pages.insert(
             normalize_url(&Url::parse("http://a.com/page1").unwrap()),
             r#"<a href="/page2">Page 2</a>"#.to_owned(),
         );
-        mock_pages.insert(normalize_url(&Url::parse("http://a.com/page2").unwrap()), "".to_owned());
+        mock_pages.insert(
+            normalize_url(&Url::parse("http://a.com/page2").unwrap()),
+            "".to_owned(),
+        );
 
-        let mock_fetcher = MockFetcher {
-            pages: mock_pages
-        };
+        let mock_fetcher = MockFetcher { pages: mock_pages };
 
         let start = Url::parse("http://a.com").unwrap();
         let result = crawl_site(&start, &mock_fetcher);
@@ -178,5 +188,15 @@ mod test {
                 .collect();
 
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_fetches_real_page() {
+        let start = Url::parse("https://example.com").unwrap();
+        let fetcher = HttpFetcher;
+
+        let result = crawl_site(&start, &fetcher);
+
+        assert!(result.contains("https://example.com/"));
     }
 }
