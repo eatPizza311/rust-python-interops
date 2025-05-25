@@ -46,28 +46,26 @@ use url::Url;
 ///
 /// Feel free to pull in any other crates you think might be useful.
 /// If your approach is channel-based, you might want to use the `crossbeam` crate too.
+//
+// ──────────────────────────────────────────────
+//  Public PyO3 entry point (GIL layer)
+// ──────────────────────────────────────────────
+//
 pub fn site_map(start_from: String, site_map: Bound<'_, PySet>) {
     todo!()
 }
 
-fn extract_links_from_html(base_url: &Url, html: &str) -> HashSet<String> {
-    let mut result = HashSet::new();
-    let document = Html::parse_document(html.trim());
-    let selector = Selector::parse(r#"a[href]"#).unwrap();
-
-    for element in document.select(&selector) {
-        if let Some(href) = element.value().attr("href") {
-            if let Ok(joined) = base_url.join(href) {
-                if joined.domain() == base_url.domain() {
-                    let clean = normalize_url(&joined);
-                    result.insert(clean);
-                }
-            };
-        }
-    }
-    result
+#[pymodule]
+fn outro3(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(site_map, m)?)?;
+    Ok(())
 }
 
+//
+// ──────────────────────────────────────────────
+//  Core Crawler Logic
+// ──────────────────────────────────────────────
+//
 pub trait Fetcher {
     fn fetch(&self, url: &str) -> Option<String>;
 }
@@ -80,7 +78,7 @@ impl Fetcher for HttpFetcher {
     }
 }
 
-fn crawl_site<F: Fetcher>(start: &Url, fetcher: &F) -> HashSet<String> {
+pub fn crawl_site<F: Fetcher>(start: &Url, fetcher: &F) -> HashSet<String> {
     let mut visited = HashSet::new();
     let mut queue = vec![normalize_url(start)];
 
@@ -104,6 +102,24 @@ fn crawl_site<F: Fetcher>(start: &Url, fetcher: &F) -> HashSet<String> {
     visited
 }
 
+fn extract_links_from_html(base_url: &Url, html: &str) -> HashSet<String> {
+    let mut result = HashSet::new();
+    let document = Html::parse_document(html.trim());
+    let selector = Selector::parse(r#"a[href]"#).unwrap();
+
+    for element in document.select(&selector) {
+        if let Some(href) = element.value().attr("href") {
+            if let Ok(joined) = base_url.join(href) {
+                if joined.domain() == base_url.domain() {
+                    let clean = normalize_url(&joined);
+                    result.insert(clean);
+                }
+            };
+        }
+    }
+    result
+}
+
 fn normalize_url(url: &Url) -> String {
     let mut url = url.clone();
     url.set_fragment(None);
@@ -111,16 +127,13 @@ fn normalize_url(url: &Url) -> String {
     url.to_string()
 }
 
-#[pymodule]
-fn outro3(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(site_map, m)?)?;
-    Ok(())
-}
-
+//
+// ──────────────────────────────────────────────
+//  Unit & Integration Tests
+// ──────────────────────────────────────────────
+//
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-
     use super::*;
 
     #[test]
