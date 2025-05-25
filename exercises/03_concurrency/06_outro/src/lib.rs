@@ -50,7 +50,7 @@ pub fn site_map(start_from: String, site_map: Bound<'_, PySet>) {
     todo!()
 }
 
-fn craw_with_mock(url: &Url, html: &str) -> HashSet<String> {
+fn crawl_with_mock(url: &Url, html: &str) -> HashSet<String> {
     let mut result = HashSet::new();
     let document = Html::parse_document(html.trim());
     let selector = Selector::parse(r#"a[href]"#).unwrap();
@@ -68,20 +68,19 @@ fn craw_with_mock(url: &Url, html: &str) -> HashSet<String> {
     result
 }
 
-pub fn crawl_recursive(start: &Url, pages: &HashMap<String, &str>) -> HashSet<String> {
+fn crawl_recursive(start: &Url, pages: &HashMap<String, &str>) -> HashSet<String> {
     let mut visited = HashSet::new();
     let mut queue = vec![normalize_url(start)];
 
     while let Some(current_url) = queue.pop() {
         if !visited.insert(current_url.clone()) {
-            println!("haha");
             continue;
         }
 
         println!("{:?}", pages.get(&current_url));
         if let Some(&html) = pages.get(&current_url) {
             let current_url = Url::parse(&current_url).unwrap();
-            let links = craw_with_mock(&current_url, html);
+            let links = crawl_with_mock(&current_url, html);
 
             for link in links {
                 if !visited.contains(&link) {
@@ -128,7 +127,7 @@ mod test {
 
         let base_url = Url::parse("http://example.com").unwrap();
 
-        let result = craw_with_mock(&base_url, html);
+        let result = crawl_with_mock(&base_url, html);
 
         let expected: HashSet<String> =
             vec!["http://example.com/about", "http://example.com/contact"]
