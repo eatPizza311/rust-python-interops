@@ -1,6 +1,6 @@
 use pyo3::{prelude::*, types::PySet};
 use scraper::{Html, Selector};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use url::Url;
 
 #[pyfunction]
@@ -68,6 +68,32 @@ fn craw_with_mock(url: &Url, html: &str) -> HashSet<String> {
     result
 }
 
+pub fn crawl_recursive(start: &Url, pages: &HashMap<String, &str>) -> HashSet<String> {
+    let mut visited = HashSet::new();
+    let mut queue = vec![normalize_url(start)];
+
+    while let Some(current_url) = queue.pop() {
+        if !visited.insert(current_url.clone()) {
+            println!("haha");
+            continue;
+        }
+
+        println!("{:?}", pages.get(&current_url));
+        if let Some(&html) = pages.get(&current_url) {
+            let current_url = Url::parse(&current_url).unwrap();
+            let links = craw_with_mock(&current_url, html);
+
+            for link in links {
+                if !visited.contains(&link) {
+                    queue.push(link);
+                }
+            }
+        }
+    }
+
+    visited
+}
+
 fn normalize_url(url: &Url) -> String {
     let mut url = url.clone();
     url.set_fragment(None);
@@ -83,6 +109,8 @@ fn outro3(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
@@ -104,6 +132,29 @@ mod test {
 
         let expected: HashSet<String> =
             vec!["http://example.com/about", "http://example.com/contact"]
+                .into_iter()
+                .map(String::from)
+                .collect();
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn it_crawls_multiple_gages_recursively() {
+        let mut mock_pages = HashMap::new();
+
+        mock_pages.insert( normalize_url(&Url::parse("http://a.com").unwrap()), r#"<a href="/page1">Page 1</a>"#);
+        mock_pages.insert(
+            normalize_url(&Url::parse("http://a.com/page1").unwrap()),
+            r#"<a href="/page2">Page 2</a>"#,
+        );
+        mock_pages.insert(normalize_url(&Url::parse("http://a.com/page2").unwrap()), "");
+
+        let start = Url::parse("http://a.com").unwrap();
+        let result = crawl_recursive(&start, &mock_pages);
+
+        let expected: HashSet<String> =
+            vec!["http://a.com/", "http://a.com/page1", "http://a.com/page2"]
                 .into_iter()
                 .map(String::from)
                 .collect();
