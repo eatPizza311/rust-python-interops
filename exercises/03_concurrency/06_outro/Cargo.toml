@@ -12,3 +12,4 @@ pyo3 = { workspace = true }
 scraper = "0.22"
 ureq = "2"
 url = "2"
+num_cpus = "1.16"

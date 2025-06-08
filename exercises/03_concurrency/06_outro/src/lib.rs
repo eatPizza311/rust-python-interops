@@ -1,6 +1,7 @@
 use pyo3::{prelude::*, types::PySet};
 use scraper::{Html, Selector};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use url::Url;
 
 #[pyfunction]
@@ -78,28 +79,65 @@ impl Fetcher for HttpFetcher {
     }
 }
 
-pub fn crawl_site<F: Fetcher>(start: &Url, fetcher: &F) -> HashSet<String> {
-    let mut visited = HashSet::new();
-    let mut queue = vec![normalize_url(start)];
+pub fn crawl_site<F: Fetcher + Sync>(start: &Url, fetcher: &F) -> HashSet<String> {
+    let visited = Arc::new(Mutex::new(HashSet::new()));
+    let (work_tx, work_rx) = crossbeam::channel::unbounded::<String>();
+    let (result_tx, result_rx) = crossbeam::channel::unbounded::<HashSet<String>>();
+    let start_url = normalize_url(start);
 
-    while let Some(current_url) = queue.pop() {
-        if !visited.insert(current_url.clone()) {
-            continue;
+    {
+        let mut visited_guard = visited.lock().unwrap();
+        visited_guard.insert(start_url.clone());
+    }
+
+    work_tx.send(start_url).unwrap();
+    let mut n_pending = 1;
+
+    // Spawn workers
+    crossbeam::scope(|scope| {
+        for _ in 0..num_cpus::get() {
+            let work_rx = work_rx.clone();
+            let result_tx = result_tx.clone();
+            let fetcher = fetcher;
+
+            scope.spawn(move |_| {
+                while let Ok(current_url) = work_rx.recv() {
+                    let links = if let Some(html) = fetcher.fetch(&current_url) {
+                        let current_url = Url::parse(&current_url).unwrap();
+                        extract_links_from_html(&current_url, &html)
+                    } else {
+                        HashSet::new()
+                    };
+
+                    result_tx.send(links).unwrap();
+                }
+            });
         }
 
-        if let Some(html) = fetcher.fetch(&current_url) {
-            let current_url = Url::parse(&current_url).unwrap();
-            let links = extract_links_from_html(&current_url, &html);
+        drop(result_tx);
 
-            for link in links {
-                if !visited.contains(&link) {
-                    queue.push(link);
+        // Main orchestrator loop
+        while n_pending > 0 {
+            if let Ok(links) = result_rx.recv() {
+                n_pending -= 1;
+
+                for link in links {
+                    let is_new_link = {
+                        let mut visited_guard = visited.lock().unwrap();
+                        visited_guard.insert(link.clone())
+                    };
+
+                    if is_new_link {
+                        work_tx.send(link).unwrap();
+                        n_pending += 1;
+                    }
                 }
             }
         }
-    }
+    })
+    .unwrap();
 
-    visited
+    Arc::try_unwrap(visited).unwrap().into_inner().unwrap()
 }
 
 fn extract_links_from_html(base_url: &Url, html: &str) -> HashSet<String> {
@@ -135,6 +173,7 @@ fn normalize_url(url: &Url) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn it_crawls_links_on_same_page() {
