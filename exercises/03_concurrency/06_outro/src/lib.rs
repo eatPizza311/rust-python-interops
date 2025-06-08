@@ -56,7 +56,7 @@ pub fn site_map(start_from: String, site_map: Bound<'_, PySet>) {
     site_map_with_fetcher(start_from, site_map, &HttpFetcher);
 }
 
-pub fn site_map_with_fetcher<F: Fetcher + Sync>(
+fn site_map_with_fetcher<F: Fetcher + Sync>(
     start_from: String,
     site_map: Bound<'_, PySet>,
     fetcher: &F,
@@ -81,11 +81,11 @@ fn outro3(m: &Bound<'_, PyModule>) -> PyResult<()> {
 //  Core Crawler Logic
 // ──────────────────────────────────────────────
 //
-pub trait Fetcher {
+trait Fetcher {
     fn fetch(&self, url: &str) -> Option<String>;
 }
 
-pub struct HttpFetcher;
+struct HttpFetcher;
 
 impl Fetcher for HttpFetcher {
     fn fetch(&self, url: &str) -> Option<String> {
@@ -93,7 +93,7 @@ impl Fetcher for HttpFetcher {
     }
 }
 
-pub fn crawl_site<F: Fetcher + Sync>(start: &Url, fetcher: &F) -> HashSet<String> {
+fn crawl_site<F: Fetcher + Sync>(start: &Url, fetcher: &F) -> HashSet<String> {
     let visited = Arc::new(Mutex::new(HashSet::new()));
     let (work_tx, work_rx) = crossbeam::channel::unbounded::<String>();
     let (result_tx, result_rx) = crossbeam::channel::unbounded::<HashSet<String>>();
