@@ -53,6 +53,18 @@ use url::Url;
 // ──────────────────────────────────────────────
 //
 pub fn site_map(start_from: String, site_map: Bound<'_, PySet>) {
+    // let start_url = Url::parse(&start_from).unwrap();
+
+    // // Run parallel crawler without holding GIL
+    // let crawled = Python::with_gil(|py| py.allow_threads(|| crawl_site(&start_url, &HttpFetcher)));
+
+    // // Insert results into PySet, acquire GIL
+    // Python::with_gil(|py| {
+    //     let site_map = site_map;
+    //     for url in crawled {
+    //         site_map.add(url).unwrap();
+    //     }
+    // });
     todo!()
 }
 
@@ -134,6 +146,8 @@ pub fn crawl_site<F: Fetcher + Sync>(start: &Url, fetcher: &F) -> HashSet<String
                 }
             }
         }
+
+        drop(work_tx)
     })
     .unwrap();
 
