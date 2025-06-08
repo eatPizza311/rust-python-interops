@@ -53,19 +53,21 @@ use url::Url;
 // ──────────────────────────────────────────────
 //
 pub fn site_map(start_from: String, site_map: Bound<'_, PySet>) {
-    // let start_url = Url::parse(&start_from).unwrap();
+    site_map_with_fetcher(start_from, site_map, &HttpFetcher);
+}
 
-    // // Run parallel crawler without holding GIL
-    // let crawled = Python::with_gil(|py| py.allow_threads(|| crawl_site(&start_url, &HttpFetcher)));
+pub fn site_map_with_fetcher<F: Fetcher + Sync>(
+    start_from: String,
+    site_map: Bound<'_, PySet>,
+    fetcher: &F,
+) {
+    let start_url = Url::parse(&start_from).unwrap();
 
-    // // Insert results into PySet, acquire GIL
-    // Python::with_gil(|py| {
-    //     let site_map = site_map;
-    //     for url in crawled {
-    //         site_map.add(url).unwrap();
-    //     }
-    // });
-    todo!()
+    let crawled = Python::with_gil(|py| py.allow_threads(|| crawl_site(&start_url, fetcher)));
+
+    for url in crawled {
+        site_map.add(url).unwrap();
+    }
 }
 
 #[pymodule]
@@ -146,8 +148,7 @@ pub fn crawl_site<F: Fetcher + Sync>(start: &Url, fetcher: &F) -> HashSet<String
                 }
             }
         }
-
-        drop(work_tx)
+        drop(work_tx);
     })
     .unwrap();
 
@@ -264,5 +265,52 @@ mod test {
         let result = crawl_site(&start, &fetcher);
 
         assert!(result.contains("https://example.com/"));
+    }
+
+    #[test]
+    fn it_exposes_site_map_correctly() {
+        pyo3::prepare_freethreaded_python();
+
+        Python::with_gil(|py| {
+            let site_map_pyset = PySet::empty(py).unwrap();
+
+            // Call site_map with Bound<'py, PySet>
+            let mut mock_pages = HashMap::new();
+            mock_pages.insert(
+                normalize_url(&Url::parse("http://a.com").unwrap()),
+                r#"<a href="/page1">Page 1</a>"#.to_owned(),
+            );
+            mock_pages.insert(
+                normalize_url(&Url::parse("http://a.com/page1").unwrap()),
+                r#"<a href="/page2">Page 2</a>"#.to_owned(),
+            );
+            mock_pages.insert(
+                normalize_url(&Url::parse("http://a.com/page2").unwrap()),
+                "".to_owned(),
+            );
+
+            let mock_fetcher = MockFetcher { pages: mock_pages };
+
+            site_map_with_fetcher(
+                "http://a.com".to_string(),
+                site_map_pyset.clone(),
+                &mock_fetcher,
+            );
+            // Extract result
+            let result: HashSet<String> = site_map_pyset
+                .iter()
+                .map(|item| item.extract::<String>().unwrap())
+                .collect();
+
+            let expected: HashSet<String> = vec![
+                "http://a.com/".to_string(),
+                "http://a.com/page1".to_string(),
+                "http://a.com/page2".to_string(),
+            ]
+            .into_iter()
+            .collect();
+
+            assert_eq!(result, expected);
+        });
     }
 }
